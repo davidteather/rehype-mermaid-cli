@@ -62,7 +62,7 @@ describe('rehype-mermaid-cli', () => {
     
     const result = await unified()
       .use(rehypeParse, { fragment: true })
-      .use(rehypeMermaidCLI, { renderThemes: ['default'] })
+      .use(rehypeMermaidCLI, { renderThemes: ['default'], ...getCIConfig() })
       .use(rehypeStringify)
       .process(html);
 
@@ -78,7 +78,7 @@ describe('rehype-mermaid-cli', () => {
     
     const result = await unified()
       .use(rehypeParse, { fragment: true })
-      .use(rehypeMermaidCLI, { renderThemes: ['default'] })
+      .use(rehypeMermaidCLI, { renderThemes: ['default'], ...getCIConfig() })
       .use(rehypeStringify)
       .process(html);
 
@@ -111,13 +111,13 @@ describe('rehype-mermaid-cli', () => {
     
     const result1 = await unified()
       .use(rehypeParse, { fragment: true })
-      .use(rehypeMermaidCLI, { renderThemes: ['default'] })
+      .use(rehypeMermaidCLI, { renderThemes: ['default'], ...getCIConfig() })
       .use(rehypeStringify)
       .process(html);
 
     const result2 = await unified()
       .use(rehypeParse, { fragment: true })
-      .use(rehypeMermaidCLI, { renderThemes: ['default'] })
+      .use(rehypeMermaidCLI, { renderThemes: ['default'], ...getCIConfig() })
       .use(rehypeStringify)
       .process(html);
 
@@ -141,7 +141,8 @@ describe('rehype-mermaid-cli', () => {
       .use(rehypeParse, { fragment: true })
       .use(rehypeMermaidCLI, { 
         renderThemes: ['default'],
-        svgClassNames: ['mx-auto']
+        svgClassNames: ['mx-auto'],
+        ...getCIConfig()
       })
       .use(rehypeStringify)
       .process(html);
@@ -154,7 +155,8 @@ describe('rehype-mermaid-cli', () => {
       .use(rehypeParse, { fragment: true })
       .use(rehypeMermaidCLI, { 
         renderThemes: ['default'],
-        svgClassNames: ['mx-auto', 'max-w-full', 'h-auto']
+        svgClassNames: ['mx-auto', 'max-w-full', 'h-auto'],
+        ...getCIConfig()
       })
       .use(rehypeStringify)
       .process(html);
@@ -170,7 +172,7 @@ describe('rehype-mermaid-cli', () => {
     
     const result = await unified()
       .use(rehypeParse, { fragment: true })
-      .use(rehypeMermaidCLI, { renderThemes: ['default'] })
+      .use(rehypeMermaidCLI, { renderThemes: ['default'], ...getCIConfig() })
       .use(rehypeStringify)
       .process(html);
 
@@ -189,7 +191,8 @@ describe('rehype-mermaid-cli', () => {
       .use(rehypeParse, { fragment: true })
       .use(rehypeMermaidCLI, { 
         renderThemes: ['default'],
-        svgClassNames: []
+        svgClassNames: [],
+        ...getCIConfig()
       })
       .use(rehypeStringify)
       .process(html);
