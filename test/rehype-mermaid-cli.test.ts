@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { unified } from 'unified';
 import rehypeParse from 'rehype-parse';
 import rehypeStringify from 'rehype-stringify';
-import { rehypeMermaidCLI } from '../src/index.js';
+import { rehypeMermaidCLI } from '../dist/index.js';
 
 describe('rehype-mermaid-cli', () => {
   it('should render a simple mermaid diagram', async () => {
@@ -118,5 +118,74 @@ describe('rehype-mermaid-cli', () => {
     expect(idMatch1).toBeTruthy();
     expect(idMatch2).toBeTruthy();
     expect(idMatch1![1]).toBe(idMatch2![1]);
+  });
+
+  it('should apply custom SVG classes when specified', async () => {
+    const html = `<pre><code class="language-mermaid">graph TD; A-->B;</code></pre>`;
+    
+    // Test with single class
+    const result1 = await unified()
+      .use(rehypeParse, { fragment: true })
+      .use(rehypeMermaidCLI, { 
+        renderThemes: ['default'],
+        svgClassNames: ['mx-auto']
+      })
+      .use(rehypeStringify)
+      .process(html);
+
+    const output1 = result1.toString();
+    expect(output1).toContain('mx-auto');
+
+    // Test with multiple classes
+    const result2 = await unified()
+      .use(rehypeParse, { fragment: true })
+      .use(rehypeMermaidCLI, { 
+        renderThemes: ['default'],
+        svgClassNames: ['mx-auto', 'max-w-full', 'h-auto']
+      })
+      .use(rehypeStringify)
+      .process(html);
+
+    const output2 = result2.toString();
+    expect(output2).toContain('mx-auto');
+    expect(output2).toContain('max-w-full');
+    expect(output2).toContain('h-auto');
+  });
+
+  it('should not apply any classes when svgClassNames is not specified', async () => {
+    const html = `<pre><code class="language-mermaid">graph TD; A-->B;</code></pre>`;
+    
+    const result = await unified()
+      .use(rehypeParse, { fragment: true })
+      .use(rehypeMermaidCLI, { renderThemes: ['default'] })
+      .use(rehypeStringify)
+      .process(html);
+
+    const output = result.toString();
+    
+    // Should not contain mx-auto or any other custom classes
+    expect(output).not.toContain('mx-auto');
+    // But should still contain the SVG element
+    expect(output).toContain('<svg');
+  });
+
+  it('should not apply classes when svgClassNames is empty array', async () => {
+    const html = `<pre><code class="language-mermaid">graph TD; A-->B;</code></pre>`;
+    
+    const result = await unified()
+      .use(rehypeParse, { fragment: true })
+      .use(rehypeMermaidCLI, { 
+        renderThemes: ['default'],
+        svgClassNames: []
+      })
+      .use(rehypeStringify)
+      .process(html);
+
+    const output = result.toString();
+    
+    // Should not contain mx-auto or any other custom classes
+    expect(output).not.toContain('mx-auto');
+    // But should still contain the SVG element
+    expect(output).toContain('<svg');
   });
 });

@@ -10,14 +10,15 @@ import { createHash } from "crypto";
 import type { Root, Element as HastElement, Parent } from "hast";
 
 // ---------- Types ----------
-type Theme = "default" | "base" | "dark" | "forest" | "neutral" | "null";
+export type Theme = "default" | "base" | "dark" | "forest" | "neutral" | "null";
 
-interface RehypeMermaidOptions {
+export interface RehypeMermaidOptions {
   renderThemes: Theme[];
+  svgClassNames?: string[];
 }
 
 // Default options for the plugin
-const defaultOptions: RehypeMermaidOptions = {
+export const defaultOptions: RehypeMermaidOptions = {
   renderThemes: ["default"],
 };
 
@@ -61,7 +62,7 @@ export const rehypeMermaidCLI: Plugin<[RehypeMermaidOptions?], Root> = (
           )
         ) as Record<Theme, string>;
 
-        applyThemeAST(node, svgByTheme, id, ancestors);
+        applyThemeAST(node, svgByTheme, id, ancestors, options.svgClassNames);
       })
     );
   };
@@ -132,7 +133,8 @@ function applyThemeAST(
   node: HastElement,
   svgByTheme: Partial<Record<Exclude<Theme, undefined>, string>>,
   id: string,
-  ancestors?: Parent[]
+  ancestors?: Parent[],
+  svgClassNames?: string[]
 ) {
   const themeDivs: HastElement[] = Object.entries(svgByTheme).map(
     ([theme, svg], index) => ({
@@ -143,7 +145,7 @@ function applyThemeAST(
         className: ["mermaid", `mermaid-${theme}`],
         style: index === 0 ? "display: block;" : "display: none;", // show first theme
       },
-      children: parseSvg(svg!),
+      children: parseSvg(svg!, svgClassNames),
     })
   );
 
@@ -173,16 +175,16 @@ function applyThemeAST(
 }
 
 /** Parse raw SVG string into HAST children */
-function parseSvg(svgContent: string): HastElement["children"] {
+function parseSvg(svgContent: string, svgClassNames?: string[]): HastElement["children"] {
   const tree = fromHtml(svgContent, { fragment: true });
   const svgElement = tree.children[0] as HastElement;
 
-  if (svgElement.tagName === "svg") {
+  if (svgElement.tagName === "svg" && svgClassNames && svgClassNames.length > 0) {
     svgElement.properties = {
       ...svgElement.properties,
       className: [
         ...((svgElement.properties?.className as string[]) || []),
-        "mx-auto",
+        ...svgClassNames,
       ],
     };
   }
