@@ -15,6 +15,10 @@ export type Theme = "default" | "base" | "dark" | "forest" | "neutral" | "null";
 export interface RehypeMermaidOptions {
   renderThemes: Theme[];
   svgClassNames?: string[];
+  puppeteerConfig?: {
+    headless?: boolean;
+    args?: string[];
+  };
 }
 
 // Default options for the plugin
@@ -56,7 +60,7 @@ export const rehypeMermaidCLI: Plugin<[RehypeMermaidOptions?], Root> = (
         const svgByTheme: Record<Theme, string> = Object.fromEntries(
           await Promise.all(
             options.renderThemes.map(async (theme) => {
-              const svg = await renderMermaidDiagram(diagram, theme);
+              const svg = await renderMermaidDiagram(diagram, theme, options.puppeteerConfig);
               return [theme, svg] as const;
             })
           )
@@ -95,7 +99,7 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /** Render a Mermaid diagram to SVG using CLI */
-async function renderMermaidDiagram(diagram: string, theme: Theme) {
+async function renderMermaidDiagram(diagram: string, theme: Theme, puppeteerConfig?: { headless?: boolean; args?: string[]; }) {
   const id = getDiagramIdWithTheme(diagram, theme);
   const tmpDir = os.tmpdir();
   const inputFile = path.join(tmpDir, `${id}.mmd`);
@@ -120,8 +124,8 @@ async function renderMermaidDiagram(diagram: string, theme: Theme) {
       svgId: id,
     },
     puppeteerConfig: {
-      headless: 1,
-      args: ["--no-sandbox"],
+      headless: puppeteerConfig?.headless ?? true,
+      args: puppeteerConfig?.args ?? [],
     },
   });
 

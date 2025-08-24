@@ -59,6 +59,24 @@ const result = await unified()
 })
 ```
 
+### Puppeteer Configuration
+
+```javascript
+// Default (works in most environments)
+.use(rehypeMermaidCLI, {
+  renderThemes: ['default']
+})
+
+// For CI/Docker environments
+.use(rehypeMermaidCLI, {
+  renderThemes: ['default'],
+  puppeteerConfig: {
+    headless: true,
+    args: ['--no-sandbox']
+  }
+})
+```
+
 ### TypeScript Usage
 
 ```typescript
@@ -89,6 +107,24 @@ Available themes: `'default'`, `'base'`, `'dark'`, `'forest'`, `'neutral'`, `'nu
 - **Type**: `string[]`
 - **Default**: `undefined`
 - **Description**: CSS class names to add to generated SVG elements
+
+#### `puppeteerConfig`
+- **Type**: `{ headless?: boolean; args?: string[]; }`
+- **Default**: `{ headless: true, args: [] }`
+- **Description**: Puppeteer configuration for the headless browser
+
+```javascript
+// For CI/Docker environments
+puppeteerConfig: {
+  headless: true,
+  args: ['--no-sandbox', '--disable-setuid-sandbox']
+}
+
+// For debugging (show browser)
+puppeteerConfig: {
+  headless: false
+}
+```
 
 ### Exports
 

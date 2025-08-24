@@ -4,13 +4,26 @@ import rehypeParse from 'rehype-parse';
 import rehypeStringify from 'rehype-stringify';
 import { rehypeMermaidCLI } from '../dist/index.js';
 
+// Helper to get CI-friendly puppeteer config when needed
+const getCIConfig = () => {
+  if (process.env.CI || process.env.GITHUB_ACTIONS) {
+    return {
+      puppeteerConfig: {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      }
+    };
+  }
+  return {};
+};
+
 describe('rehype-mermaid-cli', () => {
   it('should render a simple mermaid diagram', async () => {
     const html = `<pre><code class="language-mermaid">graph TD; A-->B;</code></pre>`;
     
     const result = await unified()
       .use(rehypeParse, { fragment: true })
-      .use(rehypeMermaidCLI, { renderThemes: ['default'] })
+      .use(rehypeMermaidCLI, { renderThemes: ['default'], ...getCIConfig() })
       .use(rehypeStringify)
       .process(html);
 
@@ -28,7 +41,7 @@ describe('rehype-mermaid-cli', () => {
     
     const result = await unified()
       .use(rehypeParse, { fragment: true })
-      .use(rehypeMermaidCLI, { renderThemes: ['default', 'dark'] })
+      .use(rehypeMermaidCLI, { renderThemes: ['default', 'dark'], ...getCIConfig() })
       .use(rehypeStringify)
       .process(html);
 
@@ -186,6 +199,28 @@ describe('rehype-mermaid-cli', () => {
     // Should not contain mx-auto or any other custom classes
     expect(output).not.toContain('mx-auto');
     // But should still contain the SVG element
+    expect(output).toContain('<svg');
+  });
+
+  it('should work with custom puppeteer config', async () => {
+    const html = `<pre><code class="language-mermaid">graph TD; A-->B;</code></pre>`;
+    
+    const result = await unified()
+      .use(rehypeParse, { fragment: true })
+      .use(rehypeMermaidCLI, { 
+        renderThemes: ['default'],
+        puppeteerConfig: {
+          headless: true,
+          args: ['--no-sandbox'] // Test that custom args work
+        }
+      })
+      .use(rehypeStringify)
+      .process(html);
+
+    const output = result.toString();
+    
+    // Should render successfully with custom puppeteer config
+    expect(output).toContain('mermaid-wrapper');
     expect(output).toContain('<svg');
   });
 });
