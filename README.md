@@ -1,7 +1,8 @@
 # rehype-mermaid-cli
 
 [![npm version](https://badge.fury.io/js/rehype-mermaid-cli.svg)](https://badge.fury.io/js/rehype-mermaid-cli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) ![NPM Downloads](https://img.shields.io/npm/d18m/rehype-mermaid-cli)
+
 
 A [Rehype](https://github.com/rehypejs/rehype) plugin to render [Mermaid](https://mermaid.js.org/) diagrams in multiple themes using the Mermaid CLI.
 
