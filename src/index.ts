@@ -12,9 +12,15 @@ import type { Root, Element as HastElement, Parent } from "hast";
 // ---------- Types ----------
 export type Theme = "default" | "base" | "dark" | "forest" | "neutral" | "null";
 
+export interface MermaidConfig {
+  securityLevel?: "strict" | "loose" | "antiscript" | "sandbox";
+  [key: string]: unknown;
+}
+
 export interface RehypeMermaidOptions {
   renderThemes: Theme[];
   svgClassNames?: string[];
+  mermaidConfig?: MermaidConfig;
   puppeteerConfig?: {
     headless?: boolean;
     args?: string[];
@@ -60,7 +66,7 @@ export const rehypeMermaidCLI: Plugin<[RehypeMermaidOptions?], Root> = (
         const svgByTheme: Record<Theme, string> = Object.fromEntries(
           await Promise.all(
             options.renderThemes.map(async (theme) => {
-              const svg = await renderMermaidDiagram(diagram, theme, options.puppeteerConfig);
+              const svg = await renderMermaidDiagram(diagram, theme, options.puppeteerConfig, options.mermaidConfig);
               return [theme, svg] as const;
             })
           )
@@ -82,10 +88,17 @@ function getDiagramId(diagram: string) {
   return `mermaid-${hash}`;
 }
 
-/** Generate ID that includes theme (for caching multiple themes) */
-function getDiagramIdWithTheme(diagram: string, theme: Theme) {
-  const hash = createHash("md5").update(diagram).digest("hex").slice(0, 8);
-  return `mermaid-${hash}-${theme}`;
+/** Generate ID that includes theme and mermaid config (for caching) */
+function getDiagramIdWithTheme(diagram: string, theme: Theme, mermaidConfig?: MermaidConfig) {
+  const hash = createHash("md5")
+    .update(diagram)
+    .update("\0")
+    .update(theme)
+    .update("\0")
+    .update(mermaidConfig ? JSON.stringify(mermaidConfig) : "")
+    .digest("hex")
+    .slice(0, 16);
+  return `mermaid-${hash}`;
 }
 
 /** Check if a file exists */
@@ -99,14 +112,12 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /** Render a Mermaid diagram to SVG using CLI */
-async function renderMermaidDiagram(diagram: string, theme: Theme, puppeteerConfig?: { headless?: boolean; args?: string[]; }) {
-  const id = getDiagramIdWithTheme(diagram, theme);
+async function renderMermaidDiagram(diagram: string, theme: Theme, puppeteerConfig?: { headless?: boolean; args?: string[]; }, mermaidConfig?: MermaidConfig) {
+  const resolvedMermaidConfig: MermaidConfig = { theme, ...mermaidConfig };
+  const id = getDiagramIdWithTheme(diagram, theme, mermaidConfig);
   const tmpDir = os.tmpdir();
   const inputFile = path.join(tmpDir, `${id}.mmd`);
-  const finalOutput = path.join(
-    tmpDir,
-    `${getDiagramIdWithTheme(diagram, theme)}.svg`
-  );
+  const finalOutput = path.join(tmpDir, `${id}.svg`);
 
   // Return cached output if already exists
   if (await exists(finalOutput)) {
@@ -118,9 +129,7 @@ async function renderMermaidDiagram(diagram: string, theme: Theme, puppeteerConf
   await run(inputFile, finalOutput as `${string}.svg`, {
     parseMMDOptions: {
       backgroundColor: "transparent",
-      mermaidConfig: {
-        theme: theme,
-      },
+      mermaidConfig: resolvedMermaidConfig,
       svgId: id,
     },
     puppeteerConfig: {

@@ -60,6 +60,29 @@ const result = await unified()
 })
 ```
 
+### Mermaid Config
+
+Pass any [Mermaid configuration](https://mermaid.js.org/config/schema-docs/config.html) options, including `securityLevel`. `theme` is always set from `renderThemes` but all other keys are forwarded as-is. Changing this config automatically busts the render cache.
+
+```javascript
+// Enable loose security level (required for HTML labels / markdown strings)
+.use(rehypeMermaidCLI, {
+  renderThemes: ['default'],
+  mermaidConfig: {
+    securityLevel: 'loose'
+  }
+})
+
+// Arbitrary mermaid config keys are also supported
+.use(rehypeMermaidCLI, {
+  renderThemes: ['default'],
+  mermaidConfig: {
+    securityLevel: 'loose',
+    flowchart: { curve: 'basis' }
+  }
+})
+```
+
 ### Puppeteer Configuration
 
 ```javascript
@@ -84,6 +107,7 @@ const result = await unified()
 import { 
   rehypeMermaidCLI, 
   type RehypeMermaidOptions, 
+  type MermaidConfig,
   type Theme 
 } from 'rehype-mermaid-cli';
 
@@ -109,6 +133,15 @@ Available themes: `'default'`, `'base'`, `'dark'`, `'forest'`, `'neutral'`, `'nu
 - **Default**: `undefined`
 - **Description**: CSS class names to add to generated SVG elements
 
+#### `mermaidConfig`
+- **Type**: `MermaidConfig` (`{ securityLevel?: 'strict' | 'loose' | 'antiscript' | 'sandbox'; [key: string]: unknown }`)
+- **Default**: `undefined`
+- **Description**: Mermaid configuration options forwarded to the CLI. `theme` is always derived from `renderThemes`. Changing this config busts the render cache automatically.
+
+Common values:
+- `securityLevel: 'loose'` — required when diagram labels contain HTML or Mermaid markdown strings
+- `securityLevel: 'strict'` — default Mermaid behavior (HTML-encodes labels)
+
 #### `puppeteerConfig`
 - **Type**: `{ headless?: boolean; args?: string[]; }`
 - **Default**: `{ headless: true, args: [] }`
@@ -131,10 +164,11 @@ puppeteerConfig: {
 
 ```typescript
 import { 
-  rehypeMermaidCLI,      // Main plugin
+  rehypeMermaidCLI,          // Main plugin
   type RehypeMermaidOptions, // Options interface
-  type Theme,            // Theme type
-  defaultOptions         // Default config
+  type MermaidConfig,        // Mermaid config interface
+  type Theme,                // Theme type
+  defaultOptions             // Default config
 } from 'rehype-mermaid-cli';
 ```
 
