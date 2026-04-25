@@ -3,6 +3,9 @@ import { unified } from "unified";
 import rehypeParse from "rehype-parse";
 import rehypeStringify from "rehype-stringify";
 import { rehypeMermaidCLI, type RehypeMermaidOptions } from "../dist/index.js";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 
 // Helper to get CI-friendly puppeteer config when needed
 const getCIConfig = (): {
@@ -343,6 +346,101 @@ describe("rehype-mermaid-cli", () => {
 
     const output = result.toString();
     expect(output).toContain("mermaid-wrapper");
+    expect(output).toContain("<svg");
+  });
+
+  it("should write SVG files to cacheDir when specified", async () => {
+    const html = `<pre><code class="language-mermaid">graph TD; A-->B;</code></pre>`;
+    const cacheDir = await fs.mkdtemp(path.join(os.tmpdir(), "rehype-mermaid-test-"));
+
+    try {
+      await unified()
+        .use(rehypeParse, { fragment: true })
+        .use(rehypeMermaidCLI, {
+          renderThemes: ["default"],
+          cacheDir,
+          ...getCIConfig(),
+        })
+        .use(rehypeStringify)
+        .process(html);
+
+      const files = await fs.readdir(cacheDir);
+      expect(files.some((f) => f.endsWith(".svg"))).toBe(true);
+
+      const svgContent = await fs.readFile(path.join(cacheDir, files[0]!), "utf8");
+      expect(svgContent).toContain("<svg");
+    } finally {
+      await fs.rm(cacheDir, { recursive: true });
+    }
+  });
+
+  it("should reuse cached SVG on second render without re-rendering", async () => {
+    const html = `<pre><code class="language-mermaid">graph TD; A-->B;</code></pre>`;
+    const cacheDir = await fs.mkdtemp(path.join(os.tmpdir(), "rehype-mermaid-test-"));
+
+    try {
+      const process = () =>
+        unified()
+          .use(rehypeParse, { fragment: true })
+          .use(rehypeMermaidCLI, { renderThemes: ["default"], cacheDir, ...getCIConfig() })
+          .use(rehypeStringify)
+          .process(html);
+
+      const result1 = await process();
+      const filesAfterFirst = await fs.readdir(cacheDir);
+      expect(filesAfterFirst).toHaveLength(1);
+
+      // Corrupt the cached file to prove the second run reads from cache, not re-renders
+      const cachedFile = path.join(cacheDir, filesAfterFirst[0]!);
+      await fs.writeFile(cachedFile, "<svg>cached</svg>", "utf8");
+
+      const result2 = await process();
+      expect(result2.toString()).toContain("cached");
+      // Cache dir still has exactly one file (no new render)
+      expect(await fs.readdir(cacheDir)).toHaveLength(1);
+
+      // First render had real SVG
+      expect(result1.toString()).toContain("<svg");
+    } finally {
+      await fs.rm(cacheDir, { recursive: true });
+    }
+  });
+
+  it("should render multiple diagrams correctly with concurrency: 1", async () => {
+    const html = `
+      <pre><code class="language-mermaid">graph TD; A-->B;</code></pre>
+      <pre><code class="language-mermaid">graph LR; X-->Y;</code></pre>
+      <pre><code class="language-mermaid">sequenceDiagram; Alice->>Bob: Hi;</code></pre>
+    `;
+
+    const result = await unified()
+      .use(rehypeParse, { fragment: true })
+      .use(rehypeMermaidCLI, { renderThemes: ["default"], concurrency: 1, ...getCIConfig() })
+      .use(rehypeStringify)
+      .process(html);
+
+    const output = result.toString();
+    const wrappers = output.match(/class="mermaid-wrapper"/g);
+    expect(wrappers).toHaveLength(3);
+    expect(output).toContain("<svg");
+  });
+
+  it("should render multiple diagrams correctly with concurrency: 5", async () => {
+    const html = `
+      <pre><code class="language-mermaid">graph TD; A-->B;</code></pre>
+      <pre><code class="language-mermaid">graph LR; X-->Y;</code></pre>
+      <pre><code class="language-mermaid">sequenceDiagram; Alice->>Bob: Hi;</code></pre>
+    `;
+
+    const result = await unified()
+      .use(rehypeParse, { fragment: true })
+      .use(rehypeMermaidCLI, { renderThemes: ["default"], concurrency: 5, ...getCIConfig() })
+      .use(rehypeStringify)
+      .process(html);
+
+    const output = result.toString();
+    const wrappers = output.match(/class="mermaid-wrapper"/g);
+    expect(wrappers).toHaveLength(3);
     expect(output).toContain("<svg");
   });
 });

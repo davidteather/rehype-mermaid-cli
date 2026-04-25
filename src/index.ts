@@ -1,4 +1,5 @@
-import { run } from "@mermaid-js/mermaid-cli";
+import { renderMermaid } from "@mermaid-js/mermaid-cli";
+import puppeteer from "puppeteer";
 import type { Plugin } from "unified";
 import { fromHtml } from "hast-util-from-html";
 import { visitParents } from "unist-util-visit-parents";
@@ -25,11 +26,23 @@ export interface RehypeMermaidOptions {
     headless?: boolean;
     args?: string[];
   };
+  /**
+   * Directory to persist rendered SVGs across builds.
+   * Defaults to os.tmpdir(). Set to a project-relative path and cache it in
+   * CI (e.g. actions/cache) to skip re-rendering unchanged diagrams.
+   */
+  cacheDir?: string;
+  /**
+   * Maximum number of diagrams rendered in parallel within a single browser.
+   * Lower values reduce memory pressure on CI; higher values speed up large sites.
+   * Defaults to 5.
+   */
+  concurrency?: number;
 }
 
-// Default options for the plugin
 export const defaultOptions: RehypeMermaidOptions = {
   renderThemes: ["default"],
+  concurrency: Math.max(1, os.cpus().length),
 };
 
 // ---------- Plugin ----------
@@ -37,6 +50,8 @@ export const rehypeMermaidCLI: Plugin<[RehypeMermaidOptions?], Root> = (
   _options
 ) => {
   const options = { ...defaultOptions, ..._options };
+  const cacheDir = options.cacheDir ?? os.tmpdir();
+  const concurrency = options.concurrency ?? 5;
 
   return async (ast, _file) => {
     const diagrams: {
@@ -46,7 +61,6 @@ export const rehypeMermaidCLI: Plugin<[RehypeMermaidOptions?], Root> = (
       ancestors: Parent[];
     }[] = [];
 
-    // Find all code blocks with language-mermaid
     visitParents(ast, "element", (node, ancestors) => {
       if (
         node.tagName === "code" &&
@@ -60,14 +74,57 @@ export const rehypeMermaidCLI: Plugin<[RehypeMermaidOptions?], Root> = (
       }
     });
 
-    // Render each diagram for all requested themes
+    if (diagrams.length === 0) return;
+
+    await fs.mkdir(cacheDir, { recursive: true });
+
+    // Collect (diagram, theme) pairs that are not already cached
+    type RenderJob = { diagram: string; theme: Theme; cachePath: string; svgId: string };
+    const jobs: RenderJob[] = [];
+    for (const { diagram } of diagrams) {
+      for (const theme of options.renderThemes) {
+        const svgId = getDiagramIdWithTheme(diagram, theme, options.mermaidConfig);
+        const cachePath = path.join(cacheDir, `${svgId}.svg`);
+        if (!(await fileExists(cachePath))) {
+          jobs.push({ diagram, theme, cachePath, svgId });
+        }
+      }
+    }
+
+    // Launch one browser for all uncached renders
+    if (jobs.length > 0) {
+      const browser = await puppeteer.launch({
+        headless: options.puppeteerConfig?.headless ?? true,
+        args: options.puppeteerConfig?.args ?? [],
+      });
+
+      try {
+        await runWithConcurrency(jobs, concurrency, async (job) => {
+          const resolvedConfig: MermaidConfig = {
+            theme: job.theme,
+            ...options.mermaidConfig,
+          };
+          const { data } = await renderMermaid(browser, job.diagram, "svg", {
+            backgroundColor: "transparent",
+            mermaidConfig: resolvedConfig,
+            svgId: job.svgId,
+          });
+          await fs.writeFile(job.cachePath, Buffer.from(data).toString("utf8"), "utf8");
+        });
+      } finally {
+        await browser.close();
+      }
+    }
+
+    // Apply cached SVGs to AST
     await Promise.all(
       diagrams.map(async ({ diagram, id, node, ancestors }) => {
         const svgByTheme: Record<Theme, string> = Object.fromEntries(
           await Promise.all(
             options.renderThemes.map(async (theme) => {
-              const svg = await renderMermaidDiagram(diagram, theme, options.puppeteerConfig, options.mermaidConfig);
-              return [theme, svg] as const;
+              const svgId = getDiagramIdWithTheme(diagram, theme, options.mermaidConfig);
+              const cachePath = path.join(cacheDir, `${svgId}.svg`);
+              return [theme, await fs.readFile(cachePath, "utf8")] as const;
             })
           )
         ) as Record<Theme, string>;
@@ -80,15 +137,12 @@ export const rehypeMermaidCLI: Plugin<[RehypeMermaidOptions?], Root> = (
 
 export default rehypeMermaidCLI;
 
-// ---------- Helper functions ----------
+// ---------- Helpers ----------
 
-/** Generate a stable ID for a diagram from its text */
 function getDiagramId(diagram: string) {
-  const hash = createHash("md5").update(diagram).digest("hex").slice(0, 8);
-  return `mermaid-${hash}`;
+  return `mermaid-${createHash("md5").update(diagram).digest("hex").slice(0, 8)}`;
 }
 
-/** Generate ID that includes theme and mermaid config (for caching) */
 function getDiagramIdWithTheme(diagram: string, theme: Theme, mermaidConfig?: MermaidConfig) {
   const hash = createHash("md5")
     .update(diagram)
@@ -101,47 +155,34 @@ function getDiagramIdWithTheme(diagram: string, theme: Theme, mermaidConfig?: Me
   return `mermaid-${hash}`;
 }
 
-/** Check if a file exists */
-async function exists(path: string): Promise<boolean> {
+async function fileExists(filePath: string): Promise<boolean> {
   try {
-    await fs.access(path, fs.constants.F_OK);
+    await fs.access(filePath, fs.constants.F_OK);
     return true;
   } catch {
     return false;
   }
 }
 
-/** Render a Mermaid diagram to SVG using CLI */
-async function renderMermaidDiagram(diagram: string, theme: Theme, puppeteerConfig?: { headless?: boolean; args?: string[]; }, mermaidConfig?: MermaidConfig) {
-  const resolvedMermaidConfig: MermaidConfig = { theme, ...mermaidConfig };
-  const id = getDiagramIdWithTheme(diagram, theme, mermaidConfig);
-  const tmpDir = os.tmpdir();
-  const inputFile = path.join(tmpDir, `${id}.mmd`);
-  const finalOutput = path.join(tmpDir, `${id}.svg`);
-
-  // Return cached output if already exists
-  if (await exists(finalOutput)) {
-    return fs.readFile(finalOutput, "utf8");
-  }
-
-  await fs.writeFile(inputFile, diagram, "utf8");
-
-  await run(inputFile, finalOutput as `${string}.svg`, {
-    parseMMDOptions: {
-      backgroundColor: "transparent",
-      mermaidConfig: resolvedMermaidConfig,
-      svgId: id,
-    },
-    puppeteerConfig: {
-      headless: puppeteerConfig?.headless ?? true,
-      args: puppeteerConfig?.args ?? [],
-    },
+/**
+ * Worker-pool concurrency: runs fn over all items with at most `limit`
+ * concurrent executions at any time, without external dependencies.
+ */
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>
+): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift()!;
+      await fn(item);
+    }
   });
-
-  return fs.readFile(finalOutput, "utf8");
+  await Promise.all(workers);
 }
 
-/** Replace AST node with a wrapper containing multiple theme SVGs */
 function applyThemeAST(
   node: HastElement,
   svgByTheme: Partial<Record<Exclude<Theme, undefined>, string>>,
@@ -156,7 +197,7 @@ function applyThemeAST(
       properties: {
         id: `mermaid-${theme}-${id}`,
         className: ["mermaid", `mermaid-${theme}`],
-        style: index === 0 ? "display: block;" : "display: none;", // show first theme
+        style: index === 0 ? "display: block;" : "display: none;",
       },
       children: parseSvg(svg!, svgClassNames),
     })
@@ -169,7 +210,6 @@ function applyThemeAST(
     children: themeDivs,
   };
 
-  // Replace original node or its <pre> parent in the AST
   let targetNode: HastElement = node;
   let parentNode: Parent | undefined = ancestors?.[ancestors.length - 1];
 
@@ -187,7 +227,6 @@ function applyThemeAST(
   }
 }
 
-/** Parse raw SVG string into HAST children */
 function parseSvg(svgContent: string, svgClassNames?: string[]): HastElement["children"] {
   const tree = fromHtml(svgContent, { fragment: true });
   const svgElement = tree.children[0] as HastElement;

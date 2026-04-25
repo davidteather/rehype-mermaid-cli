@@ -15,6 +15,8 @@ A [Rehype](https://github.com/rehypejs/rehype) plugin to render [Mermaid](https:
 - 🔒 **Consistent IDs** - Hash-based stable diagram IDs
 - 📦 **TypeScript Support** - Full type definitions included
 - ⚡ **Caching** - Avoids re-rendering identical diagrams
+- 🏎️ **Browser Reuse** - One shared Puppeteer browser per build, not one per diagram
+- 🔢 **Bounded Concurrency** - Configurable parallel render limit to avoid OOM on CI
 
 ## Installation
 
@@ -101,6 +103,46 @@ Pass any [Mermaid configuration](https://mermaid.js.org/config/schema-docs/confi
 })
 ```
 
+### Cache Directory (CI / persistent builds)
+
+By default rendered SVGs are written to `os.tmpdir()`, which is ephemeral per CI runner. Set `cacheDir` to a project-relative path and cache it between runs to skip re-rendering unchanged diagrams.
+
+```javascript
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+.use(rehypeMermaidCLI, {
+  renderThemes: ['default', 'dark'],
+  cacheDir: path.join(__dirname, '.mermaid-cache'),
+})
+```
+
+Then in your GitHub Actions workflow:
+
+```yaml
+- name: Restore Mermaid SVG cache
+  uses: actions/cache@v4
+  with:
+    path: .mermaid-cache
+    key: mermaid-svgs-${{ hashFiles('src/content/**/*.md') }}
+    restore-keys: mermaid-svgs-
+
+- name: Create Mermaid cache dir
+  run: mkdir -p .mermaid-cache
+```
+
+### Concurrency
+
+Cap how many diagrams render in parallel within the shared browser. Lower values reduce memory pressure on constrained CI runners.
+
+```javascript
+.use(rehypeMermaidCLI, {
+  renderThemes: ['default'],
+  concurrency: 3, // default: 5
+})
+```
+
 ### TypeScript Usage
 
 ```typescript
@@ -159,6 +201,16 @@ puppeteerConfig: {
   headless: false
 }
 ```
+
+#### `cacheDir`
+- **Type**: `string`
+- **Default**: `os.tmpdir()`
+- **Description**: Directory where rendered SVG files are persisted. Files are named by a hash of the diagram content + theme + mermaid config, so unchanged diagrams are never re-rendered. Set to a project-relative path and cache it in CI for fast incremental builds.
+
+#### `concurrency`
+- **Type**: `number`
+- **Default**: `os.cpus().length` (number of logical CPU cores)
+- **Description**: Maximum number of diagrams rendered in parallel within the shared browser. All renders for a given markdown file share one browser instance. Reduce this value if you see OOM errors on low-memory CI runners.
 
 ### Exports
 
