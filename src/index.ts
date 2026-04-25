@@ -109,7 +109,13 @@ export const rehypeMermaidCLI: Plugin<[RehypeMermaidOptions?], Root> = (
             mermaidConfig: resolvedConfig,
             svgId: job.svgId,
           });
-          await fs.writeFile(job.cachePath, Buffer.from(data).toString("utf8"), "utf8");
+          const svg = Buffer.from(data).toString("utf8");
+          if (!svg.trim()) {
+            throw new Error(
+              `rehype-mermaid-cli: mermaid returned empty output for diagram (theme: ${job.theme}):\n${job.diagram}`
+            );
+          }
+          await fs.writeFile(job.cachePath, svg, "utf8");
         });
       } finally {
         await browser.close();
@@ -229,9 +235,18 @@ function applyThemeAST(
 
 function parseSvg(svgContent: string, svgClassNames?: string[]): HastElement["children"] {
   const tree = fromHtml(svgContent, { fragment: true });
-  const svgElement = tree.children[0] as HastElement;
+  const svgElement = tree.children.find(
+    (child): child is HastElement =>
+      child.type === "element" && (child as HastElement).tagName === "svg"
+  );
 
-  if (svgElement.tagName === "svg" && svgClassNames && svgClassNames.length > 0) {
+  if (!svgElement) {
+    throw new Error(
+      `rehype-mermaid-cli: rendered output contains no <svg> element. Content received: ${svgContent.slice(0, 200)}`
+    );
+  }
+
+  if (svgClassNames && svgClassNames.length > 0) {
     svgElement.properties = {
       ...svgElement.properties,
       className: [
